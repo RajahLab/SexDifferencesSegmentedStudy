@@ -1,0 +1,752 @@
+---
+title: "BHAMM Sex Differences Segmented Regression Study"
+subtitle: "Script 2 - Analyses Spatial Context Memory Task"
+author: "Annalise LaPlume"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    highlight: textmate
+    theme: paper
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+
+# Data setup
+
+## Load data file and packages
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+
+# Install and load packages
+if(!require("haven"))install.packages("haven") 
+if(!require("psych"))install.packages("psych") 
+if(!require("dplyr"))install.packages("dplyr") 
+if(!require("segmented"))install.packages("segmented") 
+if(!require("ggplot2"))install.packages("ggplot2") 
+if(!require("janitor"))install.packages("janitor") 
+if(!require("forcats"))install.packages("forcats") 
+
+library(haven) # load spss files
+library(psych) # basic statistics functions
+library(dplyr) # basic statistics functions
+library(segmented) # segmented regression
+library(ggplot2) # plot results
+library(janitor) # examining and cleaning data
+library(forcats) # working with categorical variables
+
+
+# Set working directory to current folder
+# Edit to specify where datafile is located
+setwd("C:/Users/annal/OneDrive/Documents/BHAMM/Segmented Regression/Sex Differences")
+
+# Import data
+bhamm <- read_sav("BHAMM_Behav_Data_For_Analysis_2024_03.sav")
+
+# view data sample
+head(bhamm)
+
+names(bhamm)
+```
+
+## Dependent variables
+
+```{r dvs, include=TRUE, warning=FALSE, message=FALSE}
+# DV
+# cs_rate_easy: Easy Correct Source Accuracy (OLD LOCATION = OLD LOCATION)
+# cs_rate_hard: Hard Correct Source Accuracy (OLD LOCATION = OLD LOCATION)
+# recog_rate_easy: Easy Rate Recognition (OLD = FAMILIAR, NO LOCATION)
+# recog_rate_hard:Hard Rate Recognition (OLD = FAMILIAR, NO LOCATION)
+
+## Check variable structure
+str(bhamm$cs_rate_easy)
+str(bhamm$cs_rate_hard)
+str(bhamm$recog_rate_easy)
+str(bhamm$recog_rate_hard)
+
+str(bhamm$rt_cs_mean)
+str(bhamm$rt_cs_hard)
+str(bhamm$rt_recog_mean)
+str(bhamm$rt_recog_hard)
+
+# Examine variable values
+describe(bhamm$cs_rate_easy)
+describe(bhamm$cs_rate_hard)
+describe(bhamm$recog_rate_easy)
+describe(bhamm$recog_rate_hard)
+
+# Create percentages
+bhamm$cs_easy_percent <- bhamm$cs_rate_easy*100
+bhamm$cs_hard_percent <- bhamm$cs_rate_hard*100
+bhamm$recog_easy_percent <- bhamm$recog_rate_easy*100
+bhamm$recog_hard_percent <- bhamm$recog_rate_hard*100
+
+# calculate accuracy average for easy and hard conditions
+bhamm$cs_mean <- rowMeans(bhamm[,c('cs_easy_percent', 
+                                   'cs_hard_percent')],
+                          na.rm=TRUE)
+
+bhamm$recog_mean <- rowMeans(bhamm[,c('recog_easy_percent', 
+                                      'recog_hard_percent')],
+                             na.rm=TRUE)
+
+
+# calculate rt average for easy and hard conditions
+bhamm$rt_cs_mean <- rowMeans(bhamm[,c('rt_cs_easy', 
+                                   'rt_cs_hard')],
+                          na.rm=TRUE)
+
+bhamm$rt_recog_mean <- rowMeans(bhamm[,c('rt_recog_easy', 
+                                      'rt_recog_hard')],
+                             na.rm=TRUE)
+
+describe(bhamm$cs_mean)
+describe(bhamm$recog_mean)
+describe(bhamm$rt_cs_mean)
+describe(bhamm$rt_recog_mean)
+
+
+```
+
+```{r boundaries, include=TRUE, warning=FALSE, message=FALSE}
+
+# Examine women in overlapping ages of meno groups
+
+bhamm$s2_meno_group <- as.factor(bhamm$s2_meno_group)
+
+# Count women in pre and post menopause
+table(bhamm$s2_meno_group)
+
+# Count premenopause (meno group=1) age >50
+dplyr::count(subset(bhamm, s2_meno_group == "1" & s2_age >50)) # n=1
+
+# Count postmenopause (meno group=3) age <50
+dplyr::count(subset(bhamm,s2_meno_group == "3" & s2_age<50)) # n=1
+
+# One premeno woman age 53, and one postmeno woman age 47
+# Aside from these two women, no other overlap in ages between pre and post meno
+```
+
+## Independent variables
+```{r ivs, include=TRUE, warning=FALSE, message=FALSE}
+# Convert sex and menopause status into factors
+bhamm$sex <- as.factor(bhamm$sex)
+bhamm$s2_meno_group <- as.factor(bhamm$s2_meno_group)
+
+levels(bhamm$s2_meno_group)
+levels(bhamm$s2_meno_group) <- c("Premenopause", "Postmenopause")
+levels(bhamm$s2_meno_group)
+
+# Count n per menopause group
+table(bhamm$s2_meno_group)
+
+# Sex
+str(bhamm$sex)
+bhamm$sex <- as.factor(bhamm$sex)
+levels(bhamm$sex) <- c("Male", "Female")
+table(bhamm$sex)
+
+# Add NA as a level to meno group factor 
+bhamm$s2_meno_group_na <- addNA(bhamm$s2_meno_group)
+
+# Sex by menopause status
+table(bhamm$sex, bhamm$s2_meno_group_na)
+
+# Age
+str(bhamm$s2_age)
+describe(bhamm$s2_age)
+
+```
+
+## Sex differences factor
+```{r sex diffs f, include=TRUE, warning=FALSE, message=FALSE}
+
+# Check structure of variables
+str(bhamm$s2_meno_group_na)
+str(bhamm$sex)
+
+# Convert sex to factor
+bhamm$sex_f <- as.factor(bhamm$sex)
+str(bhamm$sex_f)
+
+# Convert sex and menopause status into a single factor
+bhamm$sex_meno_group <- fct_cross(bhamm$sex_f, 
+                                   bhamm$s2_meno_group_na, 
+                                   keep_empty = TRUE)
+
+str(bhamm$sex_meno_group)
+levels(bhamm$sex_meno_group)
+
+# Collapse into single factor for males
+bhamm$sex_meno <- fct_collapse(bhamm$sex_meno_group, 
+                                      Male = c("Male:Premenopause",
+                                                "Male:Postmenopause",
+                                                "Male:NA"))
+# Exclude NA females
+bhamm <- subset(bhamm, sex_meno != "Female:NA")
+
+table(bhamm$sex_meno)
+```
+
+## Separate datasets for males and females
+
+```{r males females, include=TRUE, warning=FALSE, message=FALSE}
+bhamm_m <- subset(bhamm, sex == "Male")
+dplyr::count(bhamm_m)
+
+bhamm_f <- subset(bhamm, sex == "Female")
+dplyr::count(bhamm_f)
+```
+
+
+
+
+# Scattterplots
+Plot scatterplot of dependent variables by age 
+with separate lines for sex & menopause group
+
+## Accuracy 
+```{r acc scatterplots, include=TRUE, warning=FALSE, message=FALSE}
+# Correct source easy 
+
+# save plot in jpeg format in current directory
+jpeg(file="cs_scatterplot_bhamm.jpeg", width = 4, height = 4, 
+     units = 'in', res = 300)
+
+ggplot(data=bhamm,                                         
+       aes(x=s2_age, y = cs_mean,                                       
+           colour=sex_meno,                                        
+           na.rm= TRUE)) +                                              
+  ylim (0,100) +
+  geom_point(size = 2, alpha = .6,                                     
+             position = position_jitter(height = 0.1)) +  
+  labs(x="Age", y="Accuracy (% correct)",
+       colour="",                   
+       title="Spatial Context Memory Task \n Correct Spatial Context Retrieval") +
+      theme_classic() +                                            
+    theme(axis.text=element_text(size=14),                          
+          axis.title=element_text(size=14),                        
+           plot.title=element_text(size=14, face="bold", hjust = 0.5),
+          legend.text=element_text(size=10),
+          legend.position="none") +
+           geom_smooth(method = "lm") +
+  scale_colour_manual(values=c("cornflowerblue", "brown1", "darkorange1"))
+
+# call this function to save the file 
+dev.off()
+
+# Recognition easy by age
+jpeg(file="recog_scatterplot_bhamm.jpeg", width = 4, height = 4, 
+     units = 'in', res = 300)
+
+ggplot(data=bhamm,                                         
+       aes(x=s2_age, y = recog_mean,                                    
+           colour=sex_meno,                                        
+           na.rm= TRUE)) +                                              
+  ylim (0,100) +
+  geom_point(size = 2, alpha = .6,                                     
+             position = position_jitter(height = 0.1)) +  
+  labs(x="Age", y="Accuracy (% correct)",
+       colour="",                   
+       title="Spatial Context Memory Task \n Correct Recognition") +              
+      theme_classic() +                                            
+    theme(axis.text=element_text(size=14),                          
+          axis.title=element_text(size=14),                        
+           plot.title=element_text(size=14, face="bold", hjust = 0.5),
+          legend.text=element_text(size=10),
+          legend.position="none") +
+           geom_smooth(method = "lm")+
+  scale_colour_manual(values=c("cornflowerblue", "brown1", "darkorange1"))
+
+dev.off()
+
+# Image with legend (crop and use for legend)
+
+jpeg(file="legend.jpeg", width = 4, height = 4, 
+     units = 'in', res = 300)
+
+ggplot(data=bhamm,                                         
+       aes(x=s2_age, y = cs_mean,                                       
+           colour=sex_meno,                                        
+           na.rm= TRUE)) +                                              
+  ylim (0,100) +
+  geom_point(size = 2, alpha = .6,                                     
+             position = position_jitter(height = 0.1)) +  
+  labs(x="", y="",
+       colour="",                   
+       title="") +                
+      theme_classic() +                                            
+    theme(axis.text=element_text(size=1),                          
+          axis.title=element_text(size=1),                        
+           plot.title=element_text(size=2, face="bold",            
+                                    hjust = 0.5),
+          legend.text=element_text(size=16),
+          legend.position="right") +
+           geom_smooth(method = "lm")+
+  scale_colour_manual(values=c("cornflowerblue", "brown1", "darkorange1"))
+
+dev.off()
+
+```
+
+
+## Reaction times 
+
+```{r rt scatterplots, include=TRUE, warning=FALSE, message=FALSE}
+# Correct source easy 
+
+# save plot in jpeg format in current directory
+jpeg(file="cs_scatterplot_rt_bhamm.jpeg", width = 4, height = 4, 
+     units = 'in', res = 300)
+
+ggplot(data=bhamm,                                         
+       aes(x=s2_age, y = rt_cs_mean,                                       
+           colour=sex_meno,                                        
+           na.rm= TRUE)) +                                              
+  geom_point(size = 2, alpha = .6,                                     
+             position = position_jitter(height = 0.1)) +  
+  ylim(0,4000) +
+  labs(x="Age", y="Reaction time (ms)",
+       colour="",                   
+       title="Spatial Context Memory Task \n Correct Spatial Context Retrieval") +
+      theme_classic() +                                            
+    theme(axis.text=element_text(size=14),                          
+          axis.title=element_text(size=14),                        
+           plot.title=element_text(size=14, face="bold", hjust = 0.5),
+          legend.text=element_text(size=10),
+          legend.position="none") +
+           geom_smooth(method = "lm")+
+  scale_colour_manual(values=c("cornflowerblue", "brown1", "darkorange1"))
+
+# call this function to save the file 
+dev.off()
+
+
+# Recognition easy by age
+jpeg(file="recog_scatterplot_rt_bhamm.jpeg", width = 4, height = 4, 
+     units = 'in', res = 300)
+
+ggplot(data=bhamm,                                         
+       aes(x=s2_age, y = rt_recog_mean,                                       
+           colour=sex_meno,                                        
+           na.rm= TRUE)) +                                              
+  geom_point(size = 2,  alpha = .6,                                     
+             position = position_jitter(height = 0.1)) +  
+  ylim(0,6500) +
+  labs(x="Age", y="Reaction time (ms)",
+       colour="",                   
+       title="Spatial Context Memory Task \n Correct Recognition") +              
+      theme_classic() +                                            
+    theme(axis.text=element_text(size=14),                          
+          axis.title=element_text(size=14),                        
+           plot.title=element_text(size=14, face="bold", hjust = 0.5),
+          legend.text=element_text(size=10),
+          legend.position="none") +
+           geom_smooth(method = "lm")+
+  scale_colour_manual(values=c("cornflowerblue", "brown1", "darkorange1"))
+
+dev.off()
+```
+
+
+# Segmented regression 
+
+Separate segmented models for males and females
+
+## Accuracy
+
+### Correct source - Males
+
+```{r segmented cs acc m, include=TRUE, warning=FALSE, message=FALSE}
+
+# linear model
+cs_mean_m_lm <-lm(cs_mean ~ s2_age + edu, data=bhamm_m)
+summary(cs_mean_m_lm)
+
+# test for breakpoint
+davies.test(cs_mean_m_lm, ~ s2_age)
+pscore.test(cs_mean_m_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+cs_mean_m_seg_1 <- segmented(cs_mean_m_lm, seg.Z=~s2_age)
+
+summary(cs_mean_m_seg_1) 
+
+# segmented model with two breakpoints
+cs_mean_m_seg_2 <- segmented(cs_mean_m_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+
+summary.segmented(cs_mean_m_seg_2)
+
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(cs_mean_m_lm, cs_mean_m_seg_1, cs_mean_m_seg_2)
+AIC(cs_mean_m_lm, cs_mean_m_seg_1, cs_mean_m_seg_2)
+BIC(cs_mean_m_lm, cs_mean_m_seg_1, cs_mean_m_seg_2)
+```
+
+### Correct source - Females
+
+```{r segmented cs acc f, include=TRUE, warning=FALSE, message=FALSE}
+
+# linear model
+cs_mean_f_lm <-lm(cs_mean ~ s2_age + edu, data=bhamm_f)
+summary(cs_mean_f_lm)
+
+# test for breakpoint
+davies.test(cs_mean_f_lm, ~ s2_age)
+pscore.test(cs_mean_f_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+cs_mean_f_seg_1 <- segmented(cs_mean_f_lm, seg.Z=~s2_age)
+
+summary(cs_mean_f_seg_1) 
+
+# segmented model with two breakpoints
+cs_mean_f_seg_2 <- segmented(cs_mean_f_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+
+summary.segmented(cs_mean_f_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(cs_mean_f_lm, cs_mean_f_seg_1, cs_mean_f_seg_2)
+AIC(cs_mean_f_lm, cs_mean_f_seg_1, cs_mean_f_seg_2)
+BIC(cs_mean_f_lm, cs_mean_f_seg_1, cs_mean_f_seg_2)
+
+# slope
+slope(cs_mean_f_seg_1)
+
+# confidence intervals
+confint(cs_mean_f_seg_1)
+
+# plot
+# plot.segmented(cs_mean_f_seg_1)
+```
+
+### Recognition - Males
+
+```{r segmented recog acc m, include=TRUE, warning=FALSE, message=FALSE}
+# linear model
+recog_mean_m_lm <-lm(recog_mean ~ s2_age + edu, data=bhamm_m)
+summary(recog_mean_m_lm)
+
+# test for breakpoint
+davies.test(recog_mean_m_lm, ~ s2_age)
+pscore.test(recog_mean_m_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+recog_mean_m_seg_1 <- segmented(recog_mean_m_lm, seg.Z=~s2_age)
+summary(recog_mean_m_seg_1) 
+
+# segmented model with two breakpoints
+recog_mean_m_seg_2 <- segmented(recog_mean_m_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+summary.segmented(recog_mean_m_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(recog_mean_m_lm, recog_mean_m_seg_1, recog_mean_m_seg_2)
+AIC(recog_mean_m_lm, recog_mean_m_seg_1, recog_mean_m_seg_2)
+BIC(recog_mean_m_lm, recog_mean_m_seg_1, recog_mean_m_seg_2)
+
+
+```
+
+### Recognition - Females
+
+```{r segmented recog acc f, include=TRUE, warning=FALSE, message=FALSE}
+# linear model
+recog_mean_f_lm <-lm(recog_mean ~ s2_age + edu, data=bhamm_f)
+summary(recog_mean_f_lm)
+
+# test for breakpoint
+davies.test(recog_mean_f_lm, ~ s2_age)
+pscore.test(recog_mean_f_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+recog_mean_f_seg_1 <- segmented(recog_mean_f_lm, seg.Z=~s2_age)
+summary(recog_mean_f_seg_1) 
+
+# segmented model with two breakpoints
+recog_mean_f_seg_2 <- segmented(recog_mean_f_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+summary.segmented(recog_mean_f_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(recog_mean_f_lm, recog_mean_f_seg_1, recog_mean_f_seg_2)
+AIC(recog_mean_f_lm, recog_mean_f_seg_1, recog_mean_f_seg_2)
+BIC(recog_mean_f_lm, recog_mean_f_seg_1, recog_mean_f_seg_2)
+
+# slope
+slope(recog_mean_f_seg_1)
+
+# confidence intervals
+confint(recog_mean_f_seg_1)
+
+# plot
+# plot.segmented(recog_mean_f_seg_1)
+```
+
+## Reaction times
+
+### Correct source - Males
+
+```{r segmented rt cs m, include=TRUE, warning=FALSE, message=FALSE}
+
+# linear model
+rt_cs_mean_m_lm <-lm(rt_cs_mean ~ s2_age + edu, data=bhamm_m)
+summary(rt_cs_mean_m_lm)
+
+# test for breakpoint
+davies.test(rt_cs_mean_m_lm, ~ s2_age)
+pscore.test(rt_cs_mean_m_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+rt_cs_mean_m_seg_1 <- segmented(rt_cs_mean_m_lm, seg.Z=~s2_age)
+
+summary(rt_cs_mean_m_seg_1) 
+
+# segmented model with two breakpoints
+rt_cs_mean_m_seg_2 <- segmented(rt_cs_mean_m_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+
+summary.segmented(rt_cs_mean_m_seg_2)
+
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(rt_cs_mean_m_lm, rt_cs_mean_m_seg_1, rt_cs_mean_m_seg_2)
+AIC(rt_cs_mean_m_lm, rt_cs_mean_m_seg_1, rt_cs_mean_m_seg_2)
+BIC(rt_cs_mean_m_lm, rt_cs_mean_m_seg_1, rt_cs_mean_m_seg_2)
+```
+
+### Correct source - Females
+
+```{r segmented rt_cs f, include=TRUE, warning=FALSE, message=FALSE}
+
+# linear model
+rt_cs_mean_f_lm <-lm(rt_cs_mean ~ s2_age + edu, data=bhamm_f)
+summary(rt_cs_mean_f_lm)
+
+# test for breakpoint
+davies.test(rt_cs_mean_f_lm, ~ s2_age)
+pscore.test(rt_cs_mean_f_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+rt_cs_mean_f_seg_1 <- segmented(rt_cs_mean_f_lm, seg.Z=~s2_age)
+
+summary(rt_cs_mean_f_seg_1) 
+
+# segmented model with two breakpoints
+rt_cs_mean_f_seg_2 <- segmented(rt_cs_mean_f_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+
+summary.segmented(rt_cs_mean_f_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(rt_cs_mean_f_lm, rt_cs_mean_f_seg_1, rt_cs_mean_f_seg_2)
+AIC(rt_cs_mean_f_lm, rt_cs_mean_f_seg_1, rt_cs_mean_f_seg_2)
+BIC(rt_cs_mean_f_lm, rt_cs_mean_f_seg_1, rt_cs_mean_f_seg_2)
+```
+
+### Recognition - Males
+
+```{r segmented rt recog m, include=TRUE, warning=FALSE, message=FALSE}
+# linear model
+rt_recog_mean_m_lm <-lm(rt_recog_mean ~ s2_age + edu, data=bhamm_m)
+summary(rt_recog_mean_m_lm)
+
+# test for breakpoint
+davies.test(rt_recog_mean_m_lm, ~ s2_age)
+pscore.test(rt_recog_mean_m_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+rt_recog_mean_m_seg_1 <- segmented(rt_recog_mean_m_lm, seg.Z=~s2_age)
+summary(rt_recog_mean_m_seg_1) 
+
+# segmented model with two breakpoints
+rt_recog_mean_m_seg_2 <- segmented(rt_recog_mean_m_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+summary.segmented(rt_recog_mean_m_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(rt_recog_mean_m_lm, rt_recog_mean_m_seg_1, rt_recog_mean_m_seg_2)
+AIC(rt_recog_mean_m_lm, rt_recog_mean_m_seg_1, rt_recog_mean_m_seg_2)
+BIC(rt_recog_mean_m_lm, rt_recog_mean_m_seg_1, rt_recog_mean_m_seg_2)
+```
+
+### Recognition - Females
+
+```{r segmented rt recog f, include=TRUE, warning=FALSE, message=FALSE}
+# linear model
+rt_recog_mean_f_lm <-lm(rt_recog_mean ~ s2_age + edu, data=bhamm_f)
+summary(rt_recog_mean_f_lm)
+
+# test for breakpoint
+davies.test(rt_recog_mean_f_lm, ~ s2_age)
+pscore.test(rt_recog_mean_f_lm, ~ s2_age)
+
+# segmented model with one breakpoint
+rt_recog_mean_f_seg_1 <- segmented(rt_recog_mean_f_lm, seg.Z=~s2_age)
+summary(rt_recog_mean_f_seg_1) 
+
+# segmented model with two breakpoints
+rt_recog_mean_f_seg_2 <- segmented(rt_recog_mean_f_lm, seg.Z=~s2_age, 
+                           npsi=2, control=seg.control(display=FALSE))
+summary.segmented(rt_recog_mean_f_seg_2)
+
+# Model comparison: lm vs 1 segment vs 2 segments
+anova(rt_recog_mean_f_lm, rt_recog_mean_f_seg_1, rt_recog_mean_f_seg_2)
+AIC(rt_recog_mean_f_lm, rt_recog_mean_f_seg_1, rt_recog_mean_f_seg_2)
+BIC(rt_recog_mean_f_lm, rt_recog_mean_f_seg_1, rt_recog_mean_f_seg_2)
+```
+
+
+# Summary of results 
+
+## Accuracy
+
+Hierarchical model comparison
+```{r segmented accuracy model comparison, include=TRUE, warning=FALSE, message=FALSE}
+# Table 3
+
+# CS
+
+# p-values (chi-square test)
+anova(cs_mean_m_lm, cs_mean_m_seg_1, cs_mean_m_seg_2) 
+anova(cs_mean_f_lm, cs_mean_f_seg_1, cs_mean_f_seg_2)
+
+# change in AIC
+AIC(cs_mean_m_seg_1) - AIC (cs_mean_m_lm)
+AIC(cs_mean_m_seg_2) - AIC (cs_mean_m_seg_1)
+
+AIC(cs_mean_f_seg_1) - AIC (cs_mean_f_lm)
+AIC(cs_mean_f_seg_2) - AIC (cs_mean_f_seg_1)
+
+# change in r^2
+summary(cs_mean_m_seg_1)$adj.r.squared - summary(cs_mean_m_lm)$adj.r.squared
+summary(cs_mean_m_seg_2)$adj.r.squared - summary(cs_mean_m_seg_1)$adj.r.squared
+
+summary(cs_mean_f_seg_1)$adj.r.squared - summary(cs_mean_f_lm)$adj.r.squared
+summary(cs_mean_f_seg_2)$adj.r.squared - summary(cs_mean_f_seg_1)$adj.r.squared
+
+# Recognition
+anova(recog_mean_m_lm, recog_mean_m_seg_1, recog_mean_m_seg_2)
+anova(recog_mean_f_lm, recog_mean_f_seg_1, recog_mean_f_seg_2)
+
+AIC(recog_mean_m_seg_1) - AIC (recog_mean_m_lm)
+AIC(recog_mean_m_seg_2) - AIC (recog_mean_m_seg_1)
+
+AIC(recog_mean_f_seg_1) - AIC (recog_mean_f_lm)
+AIC(recog_mean_f_seg_2) - AIC (recog_mean_f_seg_1)
+
+summary(recog_mean_m_seg_1)$adj.r.squared - summary(recog_mean_m_lm)$adj.r.squared
+summary(recog_mean_m_seg_2)$adj.r.squared - summary(recog_mean_m_seg_1)$adj.r.squared
+
+summary(recog_mean_f_seg_1)$adj.r.squared - summary(recog_mean_f_lm)$adj.r.squared
+summary(recog_mean_f_seg_2)$adj.r.squared - summary(recog_mean_f_seg_1)$adj.r.squared
+```
+
+Estimates from best fitting models
+
+```{r accuracy fitted estimates, include=TRUE, warning=FALSE, message=FALSE}
+# Slopes
+summary(cs_mean_m_lm)
+
+slope(cs_mean_f_seg_1) 
+# B1: t(52) = -0.54, p = .59
+# B2: t(52) = -2.59, p = .01
+
+summary(recog_mean_m_lm)
+
+slope(recog_mean_f_seg_1)
+# B1: t(52) = 0.76, p = .45
+# B2: t(52) = 2.08, p = .04
+
+
+# For segmented models, get p-values for slopes from t-statistics using online calculator
+# https://www.socscistatistics.com/pvalues/tdistribution.aspx
+# 2-tailed test and 52 df
+
+# Changepoints
+confint(cs_mean_f_seg_1)
+
+confint(recog_mean_f_seg_1)
+```
+
+## Reaction times
+```{r segmented final rt, include=TRUE, warning=FALSE, message=FALSE}
+
+# CS
+# p-values (chi-square test)
+anova(rt_cs_mean_m_lm, rt_cs_mean_m_seg_1, rt_cs_mean_m_seg_2)
+anova(rt_cs_mean_f_lm, rt_cs_mean_f_seg_1, rt_cs_mean_f_seg_2)
+
+# change in AIC
+AIC(rt_cs_mean_m_seg_1) - AIC (rt_cs_mean_m_lm)
+AIC(rt_cs_mean_m_seg_2) - AIC (rt_cs_mean_m_seg_1)
+
+AIC(rt_cs_mean_f_seg_1) - AIC (rt_cs_mean_f_lm)
+AIC(rt_cs_mean_f_seg_2) - AIC (rt_cs_mean_f_seg_1)
+
+# change in r^2
+summary(rt_cs_mean_m_seg_1)$adj.r.squared - summary(rt_cs_mean_m_lm)$adj.r.squared
+summary(rt_cs_mean_m_seg_2)$adj.r.squared - summary(rt_cs_mean_m_seg_1)$adj.r.squared
+
+summary(rt_cs_mean_f_seg_1)$adj.r.squared - summary(rt_cs_mean_f_lm)$adj.r.squared
+summary(rt_cs_mean_f_seg_2)$adj.r.squared - summary(rt_cs_mean_f_seg_1)$adj.r.squared
+
+
+# Recognition
+anova(rt_recog_mean_m_lm, rt_recog_mean_m_seg_1, rt_recog_mean_m_seg_2)
+anova(rt_recog_mean_f_lm, rt_recog_mean_f_seg_1, rt_recog_mean_f_seg_2)
+
+AIC(rt_recog_mean_m_seg_1) - AIC(rt_recog_mean_m_lm)
+AIC(rt_recog_mean_m_seg_2) - AIC(rt_recog_mean_m_seg_1)
+
+AIC(rt_recog_mean_f_seg_1) - AIC(rt_recog_mean_f_lm)
+AIC(rt_recog_mean_f_seg_2) - AIC(rt_recog_mean_f_seg_1)
+
+summary(rt_recog_mean_m_seg_1)$adj.r.squared - summary(rt_recog_mean_m_lm)$adj.r.squared
+summary(rt_recog_mean_m_seg_2)$adj.r.squared - summary(rt_recog_mean_m_seg_1)$adj.r.squared
+
+summary(rt_recog_mean_f_seg_1)$adj.r.squared - summary(rt_recog_mean_f_lm)$adj.r.squared
+summary(rt_recog_mean_f_seg_2)$adj.r.squared - summary(rt_recog_mean_f_seg_1)$adj.r.squared
+```
+
+Estimates from best fitting models
+
+```{r rt fitted estimates, include=TRUE, warning=FALSE, message=FALSE}
+# Slopes
+# report coefficient values for s2_age in paper (estimate, SE, t, p)
+summary(rt_cs_mean_m_lm)
+summary(rt_cs_mean_f_lm)
+
+summary(rt_recog_mean_m_lm)
+summary(rt_recog_mean_f_lm)
+```
+
+# Software citations
+
+```{r cite, include=TRUE, warning=FALSE, message=FALSE}
+
+# R
+citation()
+
+# R version
+version$version.string
+
+# segmented package
+citation("segmented")
+
+# segmented package version
+packageVersion("segmented")
+```
+
+Summary of results
+
+On accuracy (cs and recog), best fitting model is linear for males 
+and 1-changepoint for females
+
+On rts (cs and recog), the best fitting models are linear for males and females
