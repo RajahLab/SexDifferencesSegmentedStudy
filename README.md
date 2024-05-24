@@ -2,7 +2,7 @@
 
 This folder contains the following files
 
-Datafiles
+Data
 - BHAMM_Master-All_V2024-01_Final.sav
 - BHAMM_S2_NOTES_V2023-10.sav
 - BHAMM_Behav_Data_For_Analysis_2024_03.sav
